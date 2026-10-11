@@ -1,7 +1,7 @@
 {
   "name": "Hockey Card Maker",
   "short_name": "Card Maker",
-  "description": "Make a premium hockey card in 7 easy steps: upload, place, background, border, text, effect, render.",
+  "description": "Make a premium hockey card in 8 easy steps: upload, place, background, border, text, filter, effect, render.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
