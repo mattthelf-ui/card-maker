@@ -107,6 +107,8 @@ input:focus,textarea:focus,select:focus{border-color:var(--acc)}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chips button{border:2px solid var(--line);background:var(--p2);border-radius:12px;padding:8px 12px;cursor:pointer;font-weight:800;letter-spacing:.04em;font-size:15px;min-width:52px}
 .chips button.on{border-color:var(--acc);color:var(--acc)}
+.chips button.mod::after{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--acc2);margin-left:6px;vertical-align:middle}
+#txBox{margin-top:16px}
 .fonts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .fonts button{border:2px solid var(--line);background:var(--p2);border-radius:12px;padding:8px 4px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px}
 .fonts button big{font-size:26px;line-height:1.1;color:#fff}
@@ -213,6 +215,23 @@ footer.nav #bNext{flex:2}
    <h3>Layout</h3><div class="grid" id="layGrid"></div>
    <h3>Lettering</h3><div class="fonts" id="fontGrid"></div>
    <h3>Finish</h3><div class="fins" id="finGrid"></div>
+   <details class="back" id="txBox"><summary>Transform text <small>arch, circle, angle, shadow</small></summary>
+    <label class="f"><span>Text to change</span></label><div class="chips" id="txEl" style="margin:-4px 0 6px"></div>
+    <h3>Presets</h3><div class="chips" id="txPre"></div>
+    <h3>Shape</h3><div class="chips" id="txShape"></div>
+    <div id="txArchRow"><div class="sl"><span>Curve</span><input type="range" id="txArch" min="-100" max="100" step="1"><output id="oTxArch"></output></div><p class="note" style="margin-top:-4px">Right curves up, left curves down.</p></div>
+    <div id="txCircRow"><div class="sl"><span>Radius</span><input type="range" id="txRad" min="120" max="1000" step="5"><output id="oTxRad"></output></div>
+     <div class="chips"><button id="txBottom">Bottom of circle</button><button id="txWrap">Wrap full circle</button></div></div>
+    <h3>Angle</h3>
+    <div class="sl"><span>Rotate</span><input type="range" id="txAng" min="-45" max="45" step="0.5"><output id="oTxAng"></output></div>
+    <div class="sl"><span>Slant</span><input type="range" id="txSkew" min="-35" max="35" step="0.5"><output id="oTxSkew"></output></div>
+    <h3>Shadow</h3><div class="chips" id="txShadow"></div>
+    <div id="txShRows"><div class="colors" style="margin:10px 0 4px"><label><input type="color" id="txShCol">Shadow colour</label></div>
+     <div class="sl"><span>Direction</span><input type="range" id="txDir" min="0" max="359" step="1"><output id="oTxDir"></output></div>
+     <div class="sl"><span>Distance</span><input type="range" id="txDist" min="0" max="60" step="1"><output id="oTxDist"></output></div>
+     <div class="sl" id="txBlurRow"><span>Blur</span><input type="range" id="txBlur" min="0" max="40" step="1"><output id="oTxBlur"></output></div></div>
+    <div class="btns"><button class="btn sm" id="txReset">Reset this text</button><button class="btn sm ghost" id="txResetAll">Reset all text</button></div>
+   </details>
    <details class="back" id="backBox"><summary>Back of card <small>bio &amp; stats</small></summary>
     <div class="chips" id="roleChips" style="margin:2px 0 12px"></div>
     <label class="f"><span>Bio</span><textarea data-k="bio" maxlength="260" data-side="back"></textarea></label>
@@ -579,31 +598,81 @@ function serialPill(ctx,S,cx,y){const s=String(S.d.serial||'').trim();if(!s)retu
  txt(ctx,s,cx,y+33,{size:30,fam:F_BODY,style:'800',align:'center',fill:'#14161c',maxW:w-16});}
 function bottomShade(ctx,S,y0,a){ctx.save();clipWindow(ctx,S);ctx.fillStyle=linear(ctx,0,y0,0,H+B,[[0,'rgba(0,0,0,0)'],[.45,`rgba(0,0,0,${a*.6})`],[1,`rgba(0,0,0,${a})`]]);ctx.fillRect(-B,y0,W+2*B,H+B-y0);ctx.restore();}
 function teamLine(S){return[upper(S.d.team),posName(S.d)].filter(Boolean).join('  •  ');}
+/* ================= TEXT TRANSFORMS (per element: arch, circle, angle/skew, drop / 3D block shadow) ================= */
+const TX_IDS=['name','team','number','pos','set'];
+const TX_LABEL={name:'Name',team:'Team',number:'Number',pos:'Position',set:'Set name'};
+const TX_DEF={shape:'none',arch:40,radius:420,bottom:false,wrap:false,angle:0,skew:0,shadow:'none',shCol:'#000000',shDir:135,shDist:14,shBlur:14};
+function txOf(d,id){return Object.assign({},TX_DEF,(d.tx&&d.tx[id])||{});}
+/* draw one text element: fn(c) draws it at local origin (0,0) unrotated; (x,y,rotDeg) place it on the card */
+function el(ctx,S,id,x,y,rot,fn){const T=txOf(S.d,id);const ang=((rot||0)+(+T.angle||0))*DEG,sk=Math.tan((+T.skew||0)*DEG);
+ const warp=T.shape==='arch'&&+T.arch!==0||T.shape==='circle',shadow=T.shadow==='drop'||T.shadow==='block';
+ if(!warp&&!shadow){ctx.save();ctx.translate(x,y);if(ang)ctx.rotate(ang);if(sk)ctx.transform(1,0,sk,1,0,0);fn(ctx);ctx.restore();return;}
+ const M=ctx.getTransform(),s=Math.hypot(M.a,M.b);const A=M.transformPoint(new DOMPoint(x,y));
+ // 1) raw element, local frame, device pixels
+ const LX=1000,LY=480,rw=Math.ceil(2000*s),rh=Math.ceil(800*s);const raw=document.createElement('canvas');raw.width=rw;raw.height=rh;const rg=raw.getContext('2d');rg.setTransform(s,0,0,s,LX*s,LY*s);fn(rg);
+ const dat=rg.getImageData(0,0,rw,rh).data;let x0=rw,y0=rh,x1=-1,y1=-1;
+ for(let yy=0;yy<rh;yy+=2){const o=yy*rw;for(let xx=0;xx<rw;xx+=2)if(dat[(o+xx)*4+3]>6){if(xx<x0)x0=xx;if(xx>x1)x1=xx;if(yy<y0)y0=yy;if(yy>y1)y1=yy;}}
+ if(x1<0)return;x0=Math.max(0,x0-3);y0=Math.max(0,y0-3);x1=Math.min(rw-1,x1+3);y1=Math.min(rh-1,y1+3);const w=x1-x0+1,h=y1-y0+1,ax=LX*s-x0,ay=LY*s-y0;
+ // 2) warp into W2 (anchor at ox,oy)
+ let W2=raw,ox=LX*s,oy=LY*s;
+ if(warp){const sw=Math.max(1,Math.round(s*1.4));W2=document.createElement('canvas');const g=W2.getContext('2d');
+  if(T.shape==='arch'){const hb=(+T.arch/100)*w*.28,pad=4,ha=Math.abs(hb);W2.width=w+2*pad;W2.height=Math.ceil(h+2*ha+2*pad);
+   for(let xx=0;xx<w;xx+=sw){const cx=xx+sw/2,t=(cx-w/2)/(w/2),dy=-hb*(1-t*t)+hb*2/3,an=Math.atan(2*hb*t/(w/2));g.save();g.translate(cx+pad,ay+ha+pad+dy);g.rotate(an);g.drawImage(raw,x0+xx,y0,sw,h,-sw/2-.5,-ay,sw+1,h);g.restore();}
+   ox=ax+pad;oy=ay+ha+pad;}
+  else{const R=Math.max(40*s,(+T.radius||420)*s);let span=w/R;const full=Math.PI*2*.985;if(T.wrap||span>full)span=full;const D=Math.ceil(2*(R+h)+8),C=D/2;W2.width=D;W2.height=D;
+   const kk=Math.max(1.12,T.bottom?1.12:(R+ay)/R*1.05);
+   for(let xx=0;xx<w;xx+=sw){const f=((xx+sw/2)-w/2)/w*span;const th=T.bottom?Math.PI/2-f:-Math.PI/2+f;g.save();g.translate(C+R*Math.cos(th),C+R*Math.sin(th));g.rotate(T.bottom?th-Math.PI/2:th+Math.PI/2);g.drawImage(raw,x0+xx,y0,sw,h,-sw*kk/2,-ay,sw*kk,h);g.restore();}
+   ox=C-(w/2-ax);oy=T.bottom?C+R:C-R;}}
+ const place=c=>{c.translate(A.x,A.y);if(ang)c.rotate(ang);if(sk)c.transform(1,0,sk,1,0,0);c.drawImage(W2,-ox,-oy);};
+ if(!shadow){ctx.save();ctx.setTransform(1,0,0,1,0,0);place(ctx);ctx.restore();return;}
+ // 3) shadows: render placed element into a cropped device canvas E
+ const m=new DOMMatrix().translate(A.x,A.y).rotate(ang/DEG).multiply(new DOMMatrix([1,0,sk,1,0,0]));const cs=[[-ox,-oy],[W2.width-ox,-oy],[-ox,W2.height-oy],[W2.width-ox,W2.height-oy]].map(([a,b])=>m.transformPoint(new DOMPoint(a,b)));
+ const dist=(+T.shDist||0)*s,dx=Math.cos((+T.shDir||0)*DEG)*dist,dy=Math.sin((+T.shDir||0)*DEG)*dist,bl=(+T.shBlur||0)*s,mg=Math.ceil(Math.abs(dx)+Math.abs(dy)+bl*2+4);
+ const ex0=Math.floor(Math.min(...cs.map(p=>p.x)))-mg,ey0=Math.floor(Math.min(...cs.map(p=>p.y)))-mg,ew=Math.ceil(Math.max(...cs.map(p=>p.x)))+mg-ex0,eh=Math.ceil(Math.max(...cs.map(p=>p.y)))+mg-ey0;
+ const E=document.createElement('canvas');E.width=Math.max(1,ew);E.height=Math.max(1,eh);const eg=E.getContext('2d');eg.translate(-ex0,-ey0);place(eg);
+ ctx.save();ctx.setTransform(1,0,0,1,0,0);
+ if(T.shadow==='drop'){ctx.shadowColor=rgba(T.shCol,.85);ctx.shadowBlur=bl;ctx.shadowOffsetX=dx;ctx.shadowOffsetY=dy;ctx.drawImage(E,ex0,ey0);ctx.shadowColor='transparent';}
+ else{const tn=document.createElement('canvas');tn.width=E.width;tn.height=E.height;const tg=tn.getContext('2d');tg.drawImage(E,0,0);tg.globalCompositeOperation='source-in';tg.fillStyle=T.shCol;tg.fillRect(0,0,tn.width,tn.height);
+  const n=Math.max(1,Math.round(dist/Math.max(1,s*.9)));
+  // darker far edge, lighter near the letters for a bevelled block
+  const dk=document.createElement('canvas');dk.width=tn.width;dk.height=tn.height;const dg=dk.getContext('2d');dg.drawImage(tn,0,0);dg.globalCompositeOperation='source-atop';dg.fillStyle='rgba(0,0,0,.45)';dg.fillRect(0,0,dk.width,dk.height);
+  ctx.globalAlpha=1;ctx.save();ctx.shadowColor='rgba(0,0,0,.45)';ctx.shadowBlur=6*s;ctx.drawImage(dk,ex0+dx,ey0+dy);ctx.restore();
+  for(let i=n-1;i>=1;i--)ctx.drawImage(i>n*.5?dk:tn,ex0+dx*i/n,ey0+dy*i/n);}
+ ctx.drawImage(E,ex0,ey0);ctx.restore();}
+function lineW(ctx,s,font,track,size){ctx.save();ctx.font=font;const w=measureT(ctx,s,(track||0)*size);ctx.restore();return w;}
+/* team • position line (two separate elements) */
+function teamPos(ctx,S,x,y,o){const d=S.d,T=upper(d.team),P=posName(d),sep=T&&P?'  •  ':'';const font=`${o.style||'800'} ${o.size}px ${o.fam||F_BODY}`;
+ const wT=T?lineW(ctx,T,font,o.track,o.size):0,wS=sep?lineW(ctx,sep,font,o.track,o.size):0,wP=P?lineW(ctx,P,font,o.track,o.size):0;const tot=wT+wS+wP;const k=Math.min(1,(o.maxW||760)/Math.max(1,tot));
+ let sx=o.align==='left'?x:x-tot*k/2;const base={size:o.size,fam:o.fam||F_BODY,style:o.style||'800',track:o.track,px:S.px,shadow:o.shadow,sx:k,minSx:k};
+ if(T)el(ctx,S,'team',sx,y,0,c=>txt(c,T,0,0,Object.assign({},base,{fill:o.teamFill||o.fill})));sx+=wT*k;
+ if(sep){txt(ctx,sep,sx,y,Object.assign({},base,{fill:o.sepFill||o.fill}));sx+=wS*k;}
+ if(P)el(ctx,S,'pos',sx,y,0,c=>txt(c,P,0,0,Object.assign({},base,{fill:o.posFill||o.fill})));}
 const LAYOUTS={
  stack:{label:'Big Set Name',post(ctx,S){const d=S.d,[fn,ln]=splitName(d.name);const set=String(d.set||'').trim();
    bottomShade(ctx,S,860,.78);
-   bigText(ctx,S,set||ln,500,1196,{size:178,maxW:820,extrude:true});
-   txt(ctx,caseFor(S,set?d.name:fn),500,1270,{size:fontOf(S).mixed?74:62,fam:fontOf(S).fam,style:'400',align:'center',maxW:780,fill:'#ffffff',px:S.px,strokes:[[9,outlineCol(S)]],shadow:['rgba(0,0,0,.6)',10,0,3]});
-   txt(ctx,teamLine(S),500,1318,{size:32,fam:F_BODY,style:'800',align:'center',track:.22,fill:popOnDark(S.acc),maxW:760,px:S.px,shadow:['rgba(0,0,0,.8)',8,0,2]});
-   numberBadge(ctx,S,140,150,66);serialPill(ctx,S,140,232);}},
+   el(ctx,S,set?'set':'name',500,1196,0,c=>bigText(c,S,set||ln,0,0,{size:178,maxW:820,extrude:true}));
+   el(ctx,S,'name',500,1270,0,c=>txt(c,caseFor(S,set?d.name:fn),0,0,{size:fontOf(S).mixed?74:62,fam:fontOf(S).fam,style:'400',align:'center',maxW:780,fill:'#ffffff',px:S.px,strokes:[[9,outlineCol(S)]],shadow:['rgba(0,0,0,.6)',10,0,3]}));
+   teamPos(ctx,S,500,1318,{size:32,track:.22,fill:popOnDark(S.acc),maxW:760,shadow:['rgba(0,0,0,.8)',8,0,2]});
+   el(ctx,S,'number',140,150,0,c=>numberBadge(c,S,0,0,66));serialPill(ctx,S,140,232);}},
  behind:{label:'Name Behind',pre(ctx,S){const d=S.d,[fn,ln]=splitName(d.name);const set=String(d.set||'').trim();
-   bigText(ctx,S,set||ln,500,400,{size:330,maxW:880,extrude:true,ow:.06});},
-  post(ctx,S){const d=S.d;bottomShade(ctx,S,1080,.45);
-   ctx.save();ctx.translate(906,1320);ctx.rotate(-90*DEG);const nw=bigText(ctx,S,d.name,0,0,{size:84,maxW:820,align:'left',finish:S.d.finish==='holo'?'holo':'white'});
-   txt(ctx,d.position||'',nw+18,-4,{size:36,fam:F_BODY,style:'800',fill:popOnDark(S.acc),px:S.px,shadow:['rgba(0,0,0,.8)',8,0,2]});ctx.restore();
-   ctx.save();ctx.translate(102,96);ctx.rotate(90*DEG);txt(ctx,upper(d.team),0,0,{size:32,fam:F_BODY,style:'800',track:.3,fill:'#ffffff',maxW:700,px:S.px,shadow:['rgba(0,0,0,.8)',8,0,2]});ctx.restore();
-   numberBadge(ctx,S,150,1240,70);serialPill(ctx,S,W-160,96);}},
+   el(ctx,S,set?'set':'name',500,400,0,c=>bigText(c,S,set||ln,0,0,{size:330,maxW:880,extrude:true,ow:.06}));},
+  post(ctx,S){const d=S.d;bottomShade(ctx,S,1080,.45);const f=fontOf(S),sz=84*(f.mixed?1.12:1);
+   const nw=Math.min(820,lineW(ctx,caseFor(S,d.name),`400 ${sz}px ${f.fam}`,0,sz));
+   el(ctx,S,'name',906,1320,-90,c=>bigText(c,S,d.name,0,0,{size:84,maxW:820,align:'left',finish:S.d.finish==='holo'?'holo':'white'}));
+   if(d.position)el(ctx,S,'pos',906-4,1320-nw-18,-90,c=>txt(c,d.position||'',0,0,{size:36,fam:F_BODY,style:'800',fill:popOnDark(S.acc),px:S.px,shadow:['rgba(0,0,0,.8)',8,0,2]}));
+   el(ctx,S,'team',102,96,90,c=>txt(c,upper(d.team),0,0,{size:32,fam:F_BODY,style:'800',track:.3,fill:'#ffffff',maxW:700,px:S.px,shadow:['rgba(0,0,0,.8)',8,0,2]}));
+   el(ctx,S,'number',150,1240,0,c=>numberBadge(c,S,0,0,70));serialPill(ctx,S,W-160,96);}},
  plate:{label:'Nameplate',post(ctx,S){const d=S.d,[fn,ln]=splitName(d.name);
    ctx.save();clipWindow(ctx,S);const pts=[[-B,1110],[W+B,1040],[W+B,H+B],[-B,H+B]];
    ctx.shadowColor='rgba(0,0,0,.55)';ctx.shadowBlur=26*S.px;ctx.fillStyle=linear(ctx,0,1040,0,H,[[0,mix(deep(S.c1,.6),'#0b0d14',.3)],[1,'#05060a']]);poly(ctx,pts);ctx.fill();ctx.shadowColor='transparent';
    ctx.fillStyle=S.d.finish==='gold'?goldGrad(ctx,0,1000,W,1100):(S.d.finish==='chrome'?metalGrad(ctx,0,1000,W,1100):S.acc);poly(ctx,[[-B,1090],[W+B,1020],[W+B,1040],[-B,1110]]);ctx.fill();ctx.restore();
-   txt(ctx,upper(fn),78,1180,{size:40,fam:F_BODY,style:'800',track:.28,fill:popOnDark(S.acc),maxW:600,skew:-.04});
-   bigText(ctx,S,ln||fn,72,1292,{size:122,maxW:660,align:'left',skew:-.08,extrude:false});
-   txt(ctx,upper(d.team),78,1338,{size:28,fam:F_BODY,style:'800',track:.22,fill:'rgba(255,255,255,.8)',maxW:620});
-   numberBadge(ctx,S,850,1220,82);
-   const set=String(d.set||'').trim();if(set){ctx.save();ctx.font=`800 34px ${F_BODY}`;const w=Math.min(600,ctx.measureText(upper(set)).width*1.25+70);ctx.shadowColor='rgba(0,0,0,.5)';ctx.shadowBlur=14*S.px;
-    poly(ctx,[[500-w/2,70],[500+w/2,70],[500+w/2-22,124],[500-w/2+22,124]]);ctx.fillStyle=S.d.finish==='gold'?goldGrad(ctx,0,70,W,124):metalGrad(ctx,500-w/2,70,500+w/2,124);ctx.fill();ctx.restore();
-    txt(ctx,upper(set),500,110,{size:34,fam:F_BODY,style:'800',track:.24,align:'center',fill:'#111318',maxW:w-60});}
+   el(ctx,S,'name',78,1180,0,c=>txt(c,upper(fn),0,0,{size:40,fam:F_BODY,style:'800',track:.28,fill:popOnDark(S.acc),maxW:600,skew:-.04}));
+   el(ctx,S,'name',72,1292,0,c=>bigText(c,S,ln||fn,0,0,{size:122,maxW:660,align:'left',skew:-.08,extrude:false}));
+   teamPos(ctx,S,78,1338,{size:28,track:.22,align:'left',maxW:620,teamFill:'rgba(255,255,255,.8)',sepFill:'rgba(255,255,255,.5)',posFill:popOnDark(S.acc)});
+   el(ctx,S,'number',850,1220,0,c=>numberBadge(c,S,0,0,82));
+   const set=String(d.set||'').trim();if(set)el(ctx,S,'set',500,97,0,c=>{c.save();c.font=`800 34px ${F_BODY}`;const w=Math.min(600,c.measureText(upper(set)).width*1.25+70);c.shadowColor='rgba(0,0,0,.5)';c.shadowBlur=14*S.px;
+    poly(c,[[-w/2,-27],[w/2,-27],[w/2-22,27],[-w/2+22,27]]);c.fillStyle=S.d.finish==='gold'?goldGrad(c,0,-27,W,27):metalGrad(c,-w/2,-27,w/2,27);c.fill();c.restore();
+    txt(c,upper(set),0,13,{size:34,fam:F_BODY,style:'800',track:.24,align:'center',fill:'#111318',maxW:w-60});});
    serialPill(ctx,S,W-150,140);}},
 };
 const LAYOUT_ORDER=['stack','behind','plate'];
@@ -688,7 +757,7 @@ function renderCard(ctx,d,side,pw,ph,opt){opt=opt||{};const totW=opt.bleed?W+2*B
  const layer=(name,key,fn)=>{if(!opt.cache){setT(ctx);ctx.save();fn(ctx);ctx.restore();return;}const id=opt.cache+name;let c=LC[id];const k=key+'|'+pw+'x'+ph+'|'+IMG.id+'|'+IMG.closeId;
   if(!c||c.k!==k){if(!c)c=LC[id]={cv:document.createElement('canvas')};c.k=k;c.cv.width=pw;c.cv.height=ph;const g=c.cv.getContext('2d');setT(g);fn(g);}ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(c.cv,0,0);};
  ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,pw,ph);
- const K=JSON.stringify([d.bg,d.c1,d.c2,d.fx,d.amt,d.layout,d.font,d.finish,d.set,d.name,d.number,d.border,d.team,d.position,d.serial]);
+ const K=JSON.stringify([d.bg,d.c1,d.c2,d.fx,d.amt,d.layout,d.font,d.finish,d.set,d.name,d.number,d.border,d.team,d.position,d.serial,d.tx||{}]);
  if(side==='back'){layer('back',K+JSON.stringify([d.bio,d.height,d.weight,d.shoots,d.hometown,d.born,d.credit,d.role,d.skater,d.goalie,d.photo.flip,d.filter,d.famt,d.filterAll]),c=>backSide(c,S));ctx.setTransform(1,0,0,1,0,0);wholeFilter(ctx,d,opt);return S;}
  const LY=LAYOUTS[d.layout]||LAYOUTS.stack,BO=BORDERS[d.border]||BORDERS.none;const pop=d.pop&&S.alpha&&!!BO.draw;
  if(L.bg)layer('bg',K,c=>{BGS[d.bg].draw(c,S);fxBg(c,S,S.amt);if(LY.pre)LY.pre(c,S);});
@@ -798,7 +867,7 @@ async function canvasJpg(cv,q){return new Uint8Array(await (await toBlob(cv,'ima
 /* ================= APP: 7-step wizard ================= */
 const IMG={player:null,alpha:true,close:null,id:0,closeId:0};
 const STEPS=['Upload','Place','Background','Border','Text','Filter','Effect','Render'];
-const DEF={v:2,step:0,photo:{x:500,y:560,s:1000,r:0,flip:false},pop:true,bg:'arena',c1:'#c8102e',c2:'#f1be48',border:'chrome',layout:'stack',font:'anton',finish:'chrome',fx:'holo',amt:60,filter:'none',famt:80,filterAll:false,
+const DEF={v:2,step:0,photo:{x:500,y:560,s:1000,r:0,flip:false},pop:true,bg:'arena',c1:'#c8102e',c2:'#f1be48',border:'chrome',layout:'stack',font:'anton',finish:'chrome',fx:'holo',amt:60,tx:{},filter:'none',famt:80,filterAll:false,
  name:'Brody Kowalchuk',number:'17',position:'C',team:'Alberta Northstars',set:'Elite',serial:'12/50',
  bio:'A playmaking centre with soft hands and a relentless motor. Led the Northstars in assists and was named team MVP in 2025-26.',
  height:"5'9\"",weight:'152 lbs',shoots:'L',hometown:'Red Deer, AB',born:'Mar 14, 2011',credit:'Photo: Matt Helfrich',role:'skater',
@@ -945,6 +1014,31 @@ $('statTbl').addEventListener('focusin',()=>{if(step===4&&side!=='back'){side='b
 $('statTbl').addEventListener('click',e=>{const i=e.target.dataset&&e.target.dataset.del;if(i==null)return;const rows=D.role==='goalie'?D.goalie:D.skater;rows.splice(+i,1);buildStats();changed();});
 $('bAddRow').onclick=()=>{const rows=D.role==='goalie'?D.goalie:D.skater;if(rows.length<4)rows.push({s:''});buildStats();changed();};
 
+/* ---------- text transforms ---------- */
+let txSel='set';
+const TX_PRESETS=[['Arch up',{shape:'arch',arch:45}],['Smile',{shape:'arch',arch:-45}],['Circle',{shape:'circle',radius:380,bottom:false,wrap:false}],['Speed slant',{angle:-6,skew:-18}],
+ ['Drop shadow',{shadow:'drop',shDist:14,shBlur:16,shDir:120,shCol:'#000000'}],['3D block',{shadow:'block',shDist:22,shDir:120,shBlur:0,shCol:'@dark'}],['All-star',{shape:'arch',arch:35,skew:-12,shadow:'block',shDist:18,shDir:120,shCol:'@dark'}]];
+function txCur(){return txOf(D,txSel);}
+function txSet(patch){D.tx=D.tx||{};const cur=Object.assign({},D.tx[txSel]||{},patch);for(const k in cur)if(JSON.stringify(cur[k])===JSON.stringify(TX_DEF[k]))delete cur[k];if(Object.keys(cur).length)D.tx[txSel]=cur;else delete D.tx[txSel];
+ if(step===4&&side!=='front'){side='front';syncSide();}syncTx();changed({tiles:true});}
+TX_IDS.forEach(id=>{const b=document.createElement('button');b.dataset.v=id;b.textContent=TX_LABEL[id];b.onclick=()=>{txSel=id;syncTx();if(side!=='front'){side='front';syncSide();}};$('txEl').appendChild(b);});
+TX_PRESETS.forEach(([n,p])=>{const b=document.createElement('button');b.textContent=n;b.onclick=()=>{const q=Object.assign({},p);if(q.shCol==='@dark')q.shCol=mix(shade(D.c1,-.6),'#000000',.3);txSet(Object.assign({shape:'none',angle:0,skew:0,shadow:'none'},q));};$('txPre').appendChild(b);});
+[['none','None'],['arch','Arch'],['circle','Circle']].forEach(([v,l])=>{const b=document.createElement('button');b.dataset.v=v;b.textContent=l;b.onclick=()=>txSet({shape:v});$('txShape').appendChild(b);});
+[['none','None'],['drop','Drop'],['block','3D Block']].forEach(([v,l])=>{const b=document.createElement('button');b.dataset.v=v;b.textContent=l;b.onclick=()=>txSet(v==='block'&&txCur().shadow!=='block'?{shadow:v,shCol:mix(shade(D.c1,-.6),'#000000',.3),shDist:Math.max(18,txCur().shDist)}:{shadow:v});$('txShadow').appendChild(b);});
+[['txArch','arch'],['txRad','radius'],['txAng','angle'],['txSkew','skew'],['txDir','shDir'],['txDist','shDist'],['txBlur','shBlur']].forEach(([id,k])=>$(id).addEventListener('input',e=>txSet({[k]:+e.target.value})));
+$('txShCol').addEventListener('input',e=>txSet({shCol:e.target.value}));
+$('txBottom').onclick=()=>txSet({bottom:!txCur().bottom});$('txWrap').onclick=()=>txSet({wrap:!txCur().wrap});
+$('txReset').onclick=()=>{if(D.tx)delete D.tx[txSel];syncTx();changed({tiles:true});};
+$('txResetAll').onclick=()=>{D.tx={};syncTx();changed({tiles:true});};
+$('txBox').addEventListener('toggle',()=>{if($('txBox').open&&step===4&&side!=='front'){side='front';syncSide();}});
+function syncTx(){const T=txCur();const on=(sel,v)=>document.querySelector(sel).querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+ on('#txEl',txSel);on('#txShape',T.shape);on('#txShadow',T.shadow);
+ $('txEl').querySelectorAll('button').forEach(b=>b.classList.toggle('mod',!!(D.tx&&D.tx[b.dataset.v])));
+ $('txArchRow').classList.toggle('hidden',T.shape!=='arch');$('txCircRow').classList.toggle('hidden',T.shape!=='circle');$('txShRows').classList.toggle('hidden',T.shadow==='none');$('txBlurRow').classList.toggle('hidden',T.shadow!=='drop');
+ const sv=(id,o,v,f)=>{$(id).value=v;$(o).textContent=f?f(v):v;};
+ sv('txArch','oTxArch',T.arch);sv('txRad','oTxRad',T.radius);sv('txAng','oTxAng',T.angle,v=>Math.round(v)+'°');sv('txSkew','oTxSkew',T.skew,v=>Math.round(v)+'°');sv('txDir','oTxDir',T.shDir,v=>v+'°');sv('txDist','oTxDist',T.shDist);sv('txBlur','oTxBlur',T.shBlur);
+ $('txShCol').value=/^#[0-9a-f]{6}$/i.test(T.shCol)?T.shCol:'#000000';$('txBottom').classList.toggle('on',!!T.bottom);$('txWrap').classList.toggle('on',!!T.wrap);}
+
 /* ---------- step 6: effect ---------- */
 $('slAmt').oninput=e=>{D.amt=+e.target.value;$('oAmt').textContent=D.amt;changed();};
 $('slFamt').oninput=e=>{D.famt=+e.target.value;$('oFamt').textContent=D.famt;changed();};
@@ -1002,13 +1096,13 @@ $('bNew').onclick=async()=>{if(!confirm('Start a new card? This clears the curre
 
 /* ---------- form fill ---------- */
 function fillForm(){document.querySelectorAll('#panel [data-k]').forEach(el=>{el.value=D[el.dataset.k]==null?'':D[el.dataset.k];});$('c1').value=D.c1;$('c2').value=D.c2;$('slAmt').value=D.amt;$('oAmt').textContent=D.amt;$('slFamt').value=D.famt;$('oFamt').textContent=D.famt;$('inFAll').checked=!!D.filterAll;
- renderFinishes();markChips();markPresets();markTiles();buildStats();syncSliders();fillUploads();updateNotes();}
+ renderFinishes();markChips();markPresets();syncTx();markTiles();buildStats();syncSliders();fillUploads();updateNotes();}
 
 /* ---------- boot ---------- */
 async function boot(){try{if(document.fonts&&document.fonts.load)await Promise.race([Promise.all(FONT_LOADS.map(f=>document.fonts.load(f))),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
  await restore();if(!D.photo||!D.photo.s)autoFit();if(D.demo&&D.step===0&&D.photo.s===DEF.photo.s)autoFit();fillForm();go(Math.min(D.step||0,6));
  if('serviceWorker' in navigator&&/^https?:/.test(location.protocol))navigator.serviceWorker.register('sw.js').catch(()=>{});}
-window.HCM2={filtered,FILTER_ORDER,get D(){return D},go,IMG,get OUT(){return OUT},renderHiRes,renderPrint,buildPrintPDF,onCut,onClose,setColors,changed,fillForm,get step(){return step}};
+window.HCM2={txSet,get txSel(){return txSel},set txSel(v){txSel=v;syncTx();},filtered,FILTER_ORDER,get D(){return D},go,IMG,get OUT(){return OUT},renderHiRes,renderPrint,buildPrintPDF,onCut,onClose,setColors,changed,fillForm,get step(){return step}};
 const bootP=boot();
 
 </script>
